@@ -6,19 +6,26 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using BasicAuthorization.Data;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace BasicAuthorization.Controllers
 {
+    //[Authorize(Policy = "Admin")]
+    [Authorize(Policy = "canManageProduct")]
     public class MVCProductsController : Controller
     {
         private readonly ApplicationDbContext _context;
+        private readonly IAuthorizationService _authorizationService;
 
-        public MVCProductsController(ApplicationDbContext context)
+        public MVCProductsController(ApplicationDbContext context, IAuthorizationService authorizationService)
         {
             _context = context;
+            _authorizationService = authorizationService;
         }
 
         // GET: MVCProducts
+        [AllowAnonymous]
         public async Task<IActionResult> Index()
         {
             return View(await _context.Products.ToListAsync());
@@ -49,14 +56,13 @@ namespace BasicAuthorization.Controllers
         }
 
         // POST: MVCProducts/Create
-        // To protect from overposting attacks, enable the specific properties you want to bind to.
-        // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Create([Bind("ProductId,Name,CreatedUserId")] Products product)
         {
             if (ModelState.IsValid)
             {
+                product.CreatedUserId = this.User.FindFirstValue(ClaimTypes.NameIdentifier);
                 _context.Add(product);
                 await _context.SaveChangesAsync();
                 return RedirectToAction(nameof(Index));
@@ -77,12 +83,24 @@ namespace BasicAuthorization.Controllers
             {
                 return NotFound();
             }
+
+            var result = await _authorizationService.AuthorizeAsync(User, product, "sameAuthorPolicy");
+            if (!result.Succeeded)
+            {
+                if (User.Identity.IsAuthenticated)
+                {
+                    return new ForbidResult();
+                }
+                else
+                {
+                    return new ChallengeResult();
+                }
+            }
+
             return View(product);
         }
 
         // POST: MVCProducts/Edit/5
-        // To protect from overposting attacks, enable the specific properties you want to bind to.
-        // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Edit(int id, [Bind("ProductId,Name,CreatedUserId")] Products product)
